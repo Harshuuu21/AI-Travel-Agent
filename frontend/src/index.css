@@ -1,37 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-:root {
-  /* Premium Dark Theme Colors */
-  --bg-main: #0B0D0F;
-  --bg-sidebar: #050505;
-  --bg-card: rgba(18, 21, 24, 0.6);
-  --bg-card-hover: rgba(25, 30, 35, 0.8);
-  --bg-input: #121518;
-  
-  --primary: #23C7A1;
-  --primary-glow: rgba(35, 199, 161, 0.2);
-  --primary-hover: #1FA688;
-  
-  --text-main: #F3F4F6;
-  --text-muted: #9CA3AF;
-  
-  --border-light: rgba(255, 255, 255, 0.05);
-  --border-focus: rgba(35, 199, 161, 0.4);
-
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  
-  color-scheme: dark;
-  color: var(--text-main);
-  background-color: var(--bg-main);
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
+/* Minimal global reset — all component styles are inline in App.tsx */
 * {
   box-sizing: border-box;
   margin: 0;
@@ -39,56 +6,26 @@
 }
 
 body {
-  margin: 0;
-  min-width: 320px;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   min-height: 100vh;
-  background-color: var(--bg-main);
-  background-image: 
-    radial-gradient(circle at 15% 50%, rgba(35, 199, 161, 0.03), transparent 25%),
-    radial-gradient(circle at 85% 30%, rgba(35, 199, 161, 0.02), transparent 25%);
+  -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-weight: 600;
-  letter-spacing: -0.02em;
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
-a {
-  font-weight: 500;
-  color: var(--primary);
-  text-decoration: inherit;
-  transition: color 0.2s ease;
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-a:hover {
-  color: var(--primary-hover);
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(92, 107, 192, 0.3); }
+  50% { box-shadow: 0 0 0 8px rgba(92, 107, 192, 0); }
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--bg-main);
-}
-
-::-webkit-scrollbar-thumb {
-  background: #2A2F35;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #3A4048;
-}
-
-/* Glassmorphism Utilities */
-.glass-panel {
-  background: var(--bg-card);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border-light);
-  border-radius: 16px;
-  box-shadow: 0 4px 24px -8px rgba(0, 0, 0, 0.5);
+@media print {
+  body { background: white !important; }
 }
