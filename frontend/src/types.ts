@@ -6,7 +6,11 @@ export interface WeatherData {
 export interface ItineraryResponse {
   destination: string;
   weather: WeatherData;
+  budgetTier: string;
+  budgetUtilization: number;
+  travelOptions: string;
   budgetBreakdown: string;
+  accommodation: string;
   hotelSuggestions: string;
   itinerary: string;
   travelTips: string;

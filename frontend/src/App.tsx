@@ -1,33 +1,9 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import "./index.css";
-import { C, S, DAY_COLORS, BUDGET_COLORS, PREFERENCE_GROUPS, AGENT_STEPS, getWeatherEmoji, getWeatherBorderColor, parseBudgetLines, parseHotels, parseDays, parseList } from "./styles";
+import { C, S, PREFERENCE_GROUPS, AGENT_STEPS, getWeatherEmoji, getWeatherBorderColor, cleanMarkdown, BUDGET_TIER_CONFIG } from "./styles";
+import { BudgetTierBadge, BudgetCard, TravelOptionsCard, AccommodationCard, DayCardsView, TipsCard, PackingCard, exportPDF } from "./components";
 import type { ItineraryResponse } from "./types";
-
-// ============================================================
-// PDF EXPORT
-// ============================================================
-function exportPDF(data: ItineraryResponse, checkedItems: Set<number>) {
-  const w = window.open("", "_blank"); if (!w) return;
-  const days = parseDays(data.itinerary), bl = parseBudgetLines(data.budgetBreakdown);
-  const hotels = parseHotels(data.hotelSuggestions), tips = parseList(data.travelTips), pack = parseList(data.packingList);
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Itinerary — ${data.destination}</title>
-<style>body{font-family:'Segoe UI',sans-serif;max-width:700px;margin:0 auto;padding:32px;color:#1A1A2E}
-h1{color:#5C6BC0;font-size:28px}h2{margin-top:24px;color:#5C6BC0;font-size:18px}
-table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:8px;border-bottom:1px solid #f0f0f0}
-.total{font-weight:800;color:#FF7043;font-size:15px}
-.day{background:#FAFAF8;border-radius:12px;padding:20px;margin:12px 0;border:1px solid #f0f0f0}
-.day h3{margin:0 0 8px;color:#5C6BC0}ul{padding-left:20px}li{margin:4px 0;color:#555}</style></head><body>
-<h1>✈️ Trip to ${data.destination}</h1>
-<p><strong>Weather:</strong> ${data.weather.temperature}°C — ${data.weather.condition}</p>
-<h2>💰 Budget Breakdown</h2><table>${bl.map(b=>`<tr class="${/total/i.test(b.category)?'total':''}"><td>${b.category}</td><td style="text-align:right">${b.amount}</td></tr>`).join("")}</table>
-<h2>🏨 Hotel Suggestions</h2><ul>${hotels.map(h=>`<li><strong>${h.label}:</strong> ${h.desc} ${h.price?"— "+h.price:""}</li>`).join("")}</ul>
-<h2>📅 Day-by-Day Itinerary</h2>${days.map(d=>`<div class="day"><h3>Day ${d.dayNum}: ${d.title}</h3><ul>${d.activities.map(a=>`<li>${a}</li>`).join("")}</ul>${d.spend?`<p><em>${d.spend}</em></p>`:""}</div>`).join("")}
-<h2>✅ Travel Tips</h2><ul>${tips.map(t=>`<li>${t}</li>`).join("")}</ul>
-<h2>🎒 Packing List</h2><ul>${pack.map((p,i)=>`<li>${checkedItems.has(i)?"☑":"☐"} ${p}</li>`).join("")}</ul>
-</body></html>`);
-  w.document.close(); setTimeout(() => w.print(), 400);
-}
 
 // ============================================================
 // APP
@@ -37,6 +13,9 @@ function App() {
   const [month, setMonth] = useState("");
   const [duration, setDuration] = useState("");
   const [destination, setDestination] = useState("");
+  const [departureCity, setDepartureCity] = useState("");
+  const [adults, setAdults] = useState(1);
+  const [children, setChildren] = useState(0);
   const [preferences, setPreferences] = useState<string[]>([]);
   const [result, setResult] = useState<ItineraryResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -57,11 +36,17 @@ function App() {
 
   const generate = async () => {
     if (!budget || !month || !duration) { setValidationError("Please fill in Budget, Travel Month, and Trip Duration."); return; }
+    if (!departureCity.trim()) { setValidationError("Please enter your departure city."); return; }
+    if (adults < 1) { setValidationError("At least 1 adult is required."); return; }
+    if (children < 0) { setValidationError("Children count cannot be negative."); return; }
     if (preferences.length === 0) { setValidationError("Please select at least one travel preference."); return; }
     setValidationError(""); setIsLoading(true); setResult(null); setError(""); setCheckedPacking(new Set());
     try {
       const res = await axios.post("http://localhost:5000/generate-itinerary", {
-        budget, month, duration, destination: destination || "", preference: preferences.join(", "),
+        budget, month, duration,
+        destination: destination || "",
+        preference: preferences.join(", "),
+        adults, children, departureCity,
       });
       setResult(res.data);
     } catch { setError("Failed to generate itinerary. Make sure the backend and Ollama are running."); }
@@ -72,6 +57,9 @@ function App() {
   const dest = result?.destination || "";
   const weatherAvail = result?.weather && result.weather.temperature !== "N/A";
   const isMobile = typeof window !== "undefined" && window.innerWidth < 600;
+
+  // Traveller summary
+  const travellerSummary = `${adults} Adult${adults !== 1 ? 's' : ''}${children > 0 ? `, ${children} Child${children !== 1 ? 'ren' : ''}` : ''}`;
 
   return (
     <div style={S.page}>
@@ -94,10 +82,11 @@ function App() {
         <div style={S.card}>
           <div style={S.grid2}>
             {[
-              { key: "budget", label: "BUDGET (₹)", type: "number", ph: "e.g. 25000", val: budget, set: setBudget },
-              { key: "month", label: "TRAVEL MONTH", type: "text", ph: "e.g. October", val: month, set: setMonth },
-              { key: "duration", label: "TRIP DURATION (DAYS)", type: "number", ph: "e.g. 5", val: duration, set: setDuration },
-              { key: "destination", label: "DESTINATION (OPTIONAL)", type: "text", ph: "Leave blank — AI will suggest", val: destination, set: setDestination },
+              { key: "budget", label: "BUDGET (₹)", type: "number", ph: "e.g. 25000", val: budget, set: (v: string) => setBudget(v) },
+              { key: "month", label: "TRAVEL MONTH", type: "text", ph: "e.g. October", val: month, set: (v: string) => setMonth(v) },
+              { key: "duration", label: "TRIP DURATION (DAYS)", type: "number", ph: "e.g. 5", val: duration, set: (v: string) => setDuration(v) },
+              { key: "destination", label: "DESTINATION (OPTIONAL)", type: "text", ph: "Leave blank — AI will suggest", val: destination, set: (v: string) => setDestination(v) },
+              { key: "departureCity", label: "🏙️ TRAVELLING FROM", type: "text", ph: "e.g. Mumbai, Delhi, Bangalore", val: departureCity, set: (v: string) => setDepartureCity(v) },
             ].map(f => (
               <div key={f.key}>
                 <label style={S.label}>{f.label}</label>
@@ -109,6 +98,31 @@ function App() {
                 />
               </div>
             ))}
+          </div>
+
+          {/* TRAVELLER DETAILS */}
+          <div style={{ ...S.grid2, marginTop: 20 }}>
+            <div>
+              <label style={S.label}>👨‍👩‍👧 ADULTS</label>
+              <input
+                style={{ ...S.input, ...(focusedInput === "adults" ? { borderBottomColor: C.primary, background: "#fff" } : {}) }}
+                type="number" min={1} value={adults}
+                onChange={e => setAdults(Math.max(1, parseInt(e.target.value) || 1))}
+                onFocus={() => setFocusedInput("adults")} onBlur={() => setFocusedInput("")}
+              />
+            </div>
+            <div>
+              <label style={S.label}>🧒 CHILDREN (BELOW 12)</label>
+              <input
+                style={{ ...S.input, ...(focusedInput === "children" ? { borderBottomColor: C.primary, background: "#fff" } : {}) }}
+                type="number" min={0} value={children}
+                onChange={e => setChildren(Math.max(0, parseInt(e.target.value) || 0))}
+                onFocus={() => setFocusedInput("children")} onBlur={() => setFocusedInput("")}
+              />
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: C.primary, marginTop: 8, fontWeight: 600 }}>
+            👥 Travelling as: {travellerSummary}
           </div>
 
           <hr style={{ ...S.divider } as React.CSSProperties} />
@@ -154,7 +168,7 @@ function App() {
             {AGENT_STEPS.map((s, i) => {
               const done = i < agentStep, active = i === agentStep, pending = i > agentStep;
               return (
-                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: i < AGENT_STEPS.length - 1 ? 0 : 0 }}>
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                     <div style={{
                       width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
@@ -179,6 +193,11 @@ function App() {
 
         {/* =================== RESULTS =================== */}
         {result && !isLoading && (<>
+          {/* BUDGET TIER BADGE */}
+          <div style={{ textAlign: "center", marginBottom: 16 }}>
+            <BudgetTierBadge tier={result.budgetTier || "mid-range"} />
+          </div>
+
           {/* DESTINATION */}
           <div style={{ ...S.card, textAlign: "center" }}>
             <div style={{ fontSize: 24, fontWeight: 800, color: C.dark }}>📍 {dest}</div>
@@ -207,19 +226,24 @@ function App() {
             <div style={{ ...S.card, background: "#f9f9f9", color: C.muted, textAlign: "center", fontSize: 14 }}>🌤️ Weather data currently unavailable</div>
           )}
 
-          {/* BUDGET */}
-          {result.budgetBreakdown && <BudgetCard text={result.budgetBreakdown} />}
+          {/* TRAVEL OPTIONS */}
+          {result.travelOptions && <TravelOptionsCard text={result.travelOptions} />}
 
-          {/* HOTELS */}
-          {result.hotelSuggestions && <HotelCard text={result.hotelSuggestions} dest={dest} />}
+          {/* BUDGET */}
+          {result.budgetBreakdown && <BudgetCard text={cleanMarkdown(result.budgetBreakdown)} utilization={result.budgetUtilization} />}
+
+          {/* ACCOMMODATION */}
+          {(result.accommodation || result.hotelSuggestions) && (
+            <AccommodationCard text={result.accommodation || result.hotelSuggestions} dest={dest} />
+          )}
 
           {/* DAYS */}
-          {result.itinerary && <DayCardsView text={result.itinerary} />}
+          {result.itinerary && <DayCardsView text={cleanMarkdown(result.itinerary)} />}
 
           {/* TIPS + PACKING */}
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 20, marginBottom: 32 }}>
-            <TipsCard text={result.travelTips} />
-            <PackingCard text={result.packingList} checked={checkedPacking} toggle={togglePacking} />
+            <TipsCard text={cleanMarkdown(result.travelTips || "")} />
+            <PackingCard text={cleanMarkdown(result.packingList || "")} checked={checkedPacking} toggle={togglePacking} />
           </div>
 
           {/* PDF */}
@@ -234,138 +258,6 @@ function App() {
           </div>
         </>)}
       </div>
-    </div>
-  );
-}
-
-// ============================================================
-// SUB-COMPONENTS
-// ============================================================
-function BudgetCard({ text }: { text: string }) {
-  const lines = parseBudgetLines(text);
-  const totalLine = lines.find(l => /total/i.test(l.category));
-  const totalAmt = totalLine ? parseInt(totalLine.amount.replace(/[^\d]/g, ""), 10) || 1 : 1;
-  const nonTotalLines = lines.filter(l => !/total/i.test(l.category));
-
-  return (
-    <div style={S.card}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div style={S.sectionTitle}>💰 Budget Breakdown</div>
-        {totalLine && <div style={{ fontSize: 18, fontWeight: 800, color: C.accent }}>{totalLine.amount}</div>}
-      </div>
-      {/* Stacked bar */}
-      <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginBottom: 20 }}>
-        {nonTotalLines.map((l, i) => {
-          const amt = parseInt(l.amount.replace(/[^\d]/g, ""), 10) || 0;
-          const pct = Math.max((amt / totalAmt) * 100, 2);
-          return <div key={i} style={{ width: `${pct}%`, background: BUDGET_COLORS[i % BUDGET_COLORS.length], transition: "width 0.6s" }} />;
-        })}
-      </div>
-      {lines.map((l, i) => {
-        const isTotal = /total/i.test(l.category);
-        return (
-          <div key={i}>
-            {isTotal && <div style={{ height: 1, background: C.divider, margin: "8px 0" }} />}
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: isTotal ? 15 : 14, fontWeight: isTotal ? 800 : 400, color: isTotal ? C.dark : C.body }}>
-              <span>{l.category}</span>
-              <span style={{ fontWeight: isTotal ? 800 : 700, color: isTotal ? C.accent : C.dark }}>{l.amount}</span>
-            </div>
-            {!isTotal && i < lines.length - 1 && !/total/i.test(lines[i + 1]?.category) && <div style={{ height: 1, background: "#f5f5f5" }} />}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function HotelCard({ text, dest }: { text: string; dest: string }) {
-  const hotels = parseHotels(text);
-  const dotColors: Record<string, string> = { Budget: C.green, "Mid-range": "#42A5F5", Premium: "#FFB300" };
-
-  return (
-    <div style={S.card}>
-      <div style={S.sectionTitle}>🏨 Where to Stay</div>
-      {hotels.map((h, i) => (
-        <div key={i}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 0" }}>
-            <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: 10, fontSize: 11, fontWeight: 700, color: dotColors[h.label] || C.primary, background: `${dotColors[h.label] || C.primary}18` }}>{h.label}</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, color: C.dark, fontWeight: 500 }}>{h.desc}</div>
-              {h.price && <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>{h.price}</div>}
-            </div>
-            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-              <a href={`https://www.google.com/maps/search/hotels+in+${encodeURIComponent(dest)}`} target="_blank" rel="noreferrer" style={{ padding: "5px 10px", borderRadius: 8, background: "#4285F4", color: "#fff", fontSize: 10, fontWeight: 600, textDecoration: "none" }}>Maps</a>
-              <a href={`https://www.booking.com/search.html?ss=${encodeURIComponent(dest)}`} target="_blank" rel="noreferrer" style={{ padding: "5px 10px", borderRadius: 8, background: "#003580", color: "#fff", fontSize: 10, fontWeight: 600, textDecoration: "none" }}>Booking</a>
-            </div>
-          </div>
-          {i < hotels.length - 1 && <div style={{ height: 1, background: C.divider }} />}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function DayCardsView({ text }: { text: string }) {
-  const days = parseDays(text);
-  return (<>
-    {days.map((d, i) => {
-      const color = DAY_COLORS[i % DAY_COLORS.length];
-      return (
-        <div key={i} style={{ ...S.card, padding: 0, overflow: "hidden" }}>
-          <div style={{ background: `${color}10`, padding: "16px 22px", display: "flex", alignItems: "center", gap: 14 }}>
-            <span style={{ width: 36, height: 36, borderRadius: "50%", background: color, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, color: "#fff", fontSize: 14, flexShrink: 0 }}>{d.dayNum}</span>
-            <span style={{ color, fontWeight: 700, fontSize: 16 }}>{d.title}</span>
-          </div>
-          <div style={{ padding: "18px 22px" }}>
-            {d.activities.map((a, j) => {
-              const isMorning = /morning/i.test(a), isAfternoon = /afternoon/i.test(a), isEvening = /evening/i.test(a);
-              const timeLabel = isMorning ? "MORNING" : isAfternoon ? "AFTERNOON" : isEvening ? "EVENING" : "";
-              const borderColor = isMorning ? "#FFB74D" : isAfternoon ? "#4FC3F7" : isEvening ? "#7E57C2" : "#eee";
-              return (
-                <div key={j} style={{ borderLeft: `3px solid ${borderColor}`, paddingLeft: 14, marginBottom: 12 }}>
-                  {timeLabel && <div style={{ fontSize: 10, fontWeight: 700, color: C.label, letterSpacing: "0.8px", marginBottom: 2 }}>{timeLabel}</div>}
-                  <div style={{ fontSize: 14, color: C.body }}>{a}</div>
-                </div>
-              );
-            })}
-            {d.spend && (
-              <div style={{ marginTop: 12, display: "inline-block", padding: "5px 14px", borderRadius: 20, background: C.coralLight, fontSize: 12, fontWeight: 700, color: C.accent }}>{d.spend}</div>
-            )}
-          </div>
-        </div>
-      );
-    })}
-  </>);
-}
-
-function TipsCard({ text }: { text: string }) {
-  const tips = parseList(text);
-  return (
-    <div style={{ ...S.card, background: C.greenLight }}>
-      <div style={S.sectionTitle}>✅ Travel Tips</div>
-      {tips.map((t, i) => (
-        <div key={i} style={{ display: "flex", gap: 10, marginBottom: 10, fontSize: 13, color: C.body }}>
-          <span style={{ width: 20, height: 20, borderRadius: "50%", background: C.green, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, flexShrink: 0 }}>✓</span>
-          <span>{t}</span>
-        </div>
-      ))}
-      {tips.length === 0 && <div style={{ fontSize: 13, color: C.muted }}>No tips available</div>}
-    </div>
-  );
-}
-
-function PackingCard({ text, checked, toggle }: { text: string; checked: Set<number>; toggle: (i: number) => void }) {
-  const items = parseList(text);
-  return (
-    <div style={{ ...S.card, background: C.amberLight }}>
-      <div style={S.sectionTitle}>🎒 Packing List</div>
-      {items.map((item, i) => (
-        <div key={i} onClick={() => toggle(i)} style={{ display: "flex", gap: 10, marginBottom: 10, fontSize: 13, cursor: "pointer", alignItems: "center" }}>
-          <span style={{ width: 20, height: 20, borderRadius: 4, border: checked.has(i) ? "none" : `2px solid #ccc`, background: checked.has(i) ? C.primary : "transparent", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, flexShrink: 0 }}>{checked.has(i) ? "✓" : ""}</span>
-          <span style={{ textDecoration: checked.has(i) ? "line-through" : "none", color: checked.has(i) ? "#aaa" : C.body }}>{item}</span>
-        </div>
-      ))}
-      {items.length === 0 && <div style={{ fontSize: 13, color: C.muted }}>No packing list available</div>}
     </div>
   );
 }
